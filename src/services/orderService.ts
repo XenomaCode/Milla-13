@@ -8,65 +8,68 @@ import {
   orderBy, 
   Timestamp,
   updateDoc,
-  doc
+  doc,
+  getDoc
 } from 'firebase/firestore';
 import { Pedido, EstadoPedido, ProductoPedido } from '@/models';
 import { ProductItem } from '@/types';
 
-interface CustomerInfo {
+// Interfaces
+export interface OrderItem {
+  id: string;
+  name: string;
+  price: number;
+  quantity: number;
+}
+
+export interface CustomerInfo {
   name: string;
   phone: string;
   email: string;
   pickupTime: string;
-  notes: string;
+  notes?: string;
 }
 
-interface Order {
-  items: ProductItem[];
+export interface Order {
+  id?: string;
   customerInfo: CustomerInfo;
+  items: OrderItem[];
   total: number;
   status: 'pending' | 'processing' | 'completed' | 'cancelled';
   createdAt: Timestamp;
 }
 
-export const createOrder = async (
-  items: ProductItem[], 
-  customerInfo: CustomerInfo, 
-  total: number
-) => {
+// Crear un nuevo pedido
+export const createOrder = async (orderData: Omit<Order, 'id' | 'createdAt' | 'status'>) => {
   try {
-    const orderData: Order = {
-      items,
-      customerInfo,
-      total,
-      status: 'pending',
+    const order = {
+      ...orderData,
+      status: 'pending' as const,
       createdAt: Timestamp.now()
     };
     
-    const docRef = await addDoc(collection(db, 'orders'), orderData);
-    
-    // Aquí puedes agregar la lógica para enviar notificación por WhatsApp
-    await sendWhatsAppNotification(orderData, docRef.id);
-    
+    const docRef = await addDoc(collection(db, 'orders'), order);
     return docRef.id;
   } catch (error) {
-    console.error('Error al crear el pedido:', error);
+    console.error('Error al crear pedido:', error);
     throw error;
   }
 };
 
+// Obtener todos los pedidos
 export const getOrders = async (status?: string) => {
   try {
     let q;
+    
     if (status) {
       q = query(
-        collection(db, 'orders'), 
+        collection(db, 'orders'),
         where('status', '==', status),
         orderBy('createdAt', 'desc')
       );
     } else {
       q = query(
-        collection(db, 'orders'), 
+        collection(db, 'orders'),
         orderBy('createdAt', 'desc')
       );
     }
@@ -82,10 +85,33 @@ export const getOrders = async (status?: string) => {
   }
 };
 
+// Obtener un pedido por ID
+export const getOrderById = async (orderId: string) => {
+  try {
+    const docRef = doc(db, 'orders', orderId);
+    const docSnap = await getDoc(docRef);
+    
+    if (docSnap.exists()) {
+      return {
+        id: docSnap.id,
+        ...docSnap.data()
+      };
+    } else {
+      throw new Error('Pedido no encontrado');
+    }
+  } catch (error) {
+    console.error('Error al obtener pedido:', error);
+    throw error;
+  }
+};
+
+// Actualizar el estado de un pedido
 export const updateOrderStatus = async (orderId: string, status: string) => {
   try {
     const orderRef = doc(db, 'orders', orderId);
-    await updateDoc(orderRef, { status });
+    await updateDoc(orderRef, {
+      status
+    });
     return true;
   } catch (error) {
     console.error('Error al actualizar estado del pedido:', error);
